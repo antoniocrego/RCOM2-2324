@@ -55,8 +55,61 @@ int url_parser(char *str, struct url *url) {
     return 0;
 }
 
+int socket_create(char *ip, int port, int *sockfd) {
+
+    struct sockaddr_in server_addr;
+
+    /*server address handling*/
+    bzero((char *) &server_addr, sizeof(server_addr));
+    server_addr.sin_family = AF_INET;
+    server_addr.sin_addr.s_addr = inet_addr(ip);    /*32 bit Internet address network byte ordered*/
+    server_addr.sin_port = htons(port);        /*server TCP port must be network byte ordered */
+
+    /*open a TCP socket*/
+    if ((&sockfd = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
+        perror("socket()");
+        exit(-1);
+    }
+    /*connect to the server*/
+    if (connect(&sockfd,
+                (struct sockaddr *) &server_addr,
+                sizeof(server_addr)) < 0) {
+        perror("connect()");
+        exit(-1);
+    }
+
+    return 0;
+}
+
 int main(int argc, char *argv[]) {
     struct url url;
-    url_parser("ftp://ftp.up.pt/", &url);
+    if(argc != 2) {
+        printf("Usage: %s ftp://[<user>:<password>@]<host>/<url-path>\n", argv[0]);
+        return 1;
+    }
+    if(url_parser(argv[1], &url) != 0){
+        printf("Error parsing url\n");
+        return 1;
+    }
+
+    struct hostent *h;
+
+    if ((h = gethostbyname(argv[1])) == NULL) {
+        herror("gethostbyname()");
+        exit(-1);
+    }
+
+    char *ip = inet_ntoa(*((struct in_addr *) h->h_addr));
+    
+    int sock21;
+
+    socket_create(ip, 21, &sock21);
+
+    
+
+
+
+
+
     return 0;
 }
