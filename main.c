@@ -11,16 +11,16 @@ struct url {
     char *user;
     char *password;
     char *host;
-    char *port;
     char *path;
+    char *file;
 };
 
 int url_parser(char *str, struct url *url) {
     regex_t regex_user;
     regex_t regex_nouser;
     char *nouserpattern = "(ftp)://([^/]*)(/.*)";
-    char *userpattern = "(ftp)://([^:]*):([^@]*)@([^/]*)(/.*)";
-    regmatch_t match[6];
+    char *userpattern = "(ftp)://([^:]*):([^@]*)@([^/]*)/(.*/)*(.*)";
+    regmatch_t match[7];
     if (regcomp(&regex_user, userpattern, REG_EXTENDED) != 0) {
         fprintf(stderr, "Failed to compile regex pattern\n");
         return 1;
@@ -29,23 +29,31 @@ int url_parser(char *str, struct url *url) {
         fprintf(stderr, "Failed to compile regex pattern\n");
         return 1;
     }
-    if (regexec(&regex_user, str, 6, match, 0) == 0){
+    if (regexec(&regex_user, str, 7, match, 0) == 0){
         printf("Match with user\n");
-        url->user = malloc(sizeof(char) * (match[2].rm_eo - match[2].rm_so));
-        url->password = malloc(sizeof(char) * (match[3].rm_eo - match[3].rm_so));
-        url->host = malloc(sizeof(char) * (match[4].rm_eo - match[4].rm_so));
-        url->path = malloc(sizeof(char) * (match[5].rm_eo - match[5].rm_so));
+        url->user = (char*) malloc(match[2].rm_eo - match[2].rm_so);
+        url->password = (char*) malloc(match[3].rm_eo - match[3].rm_so);
+        url->host = (char*) malloc(match[4].rm_eo - match[4].rm_so);
+        url->path = (char*) malloc(match[5].rm_eo - match[5].rm_so);
+        url->file = (char*) malloc(match[6].rm_eo - match[6].rm_so);
         strncpy(url->user, str + match[2].rm_so, match[2].rm_eo - match[2].rm_so);
         strncpy(url->password, str + match[3].rm_so, match[3].rm_eo - match[3].rm_so);
         strncpy(url->host, str + match[4].rm_so, match[4].rm_eo - match[4].rm_so);
         strncpy(url->path, str + match[5].rm_so, match[5].rm_eo - match[5].rm_so);
+        strncpy(url->file, str + match[6].rm_so, match[6].rm_eo - match[6].rm_so);
     }
-    else if (regexec(&regex_nouser, str, 4, match, 0) == 0){
+    else if (regexec(&regex_nouser, str, 5, match, 0) == 0){
         printf("Match without user\n");
-        url->host = malloc(sizeof(char) * (match[2].rm_eo - match[2].rm_so));
-        url->path = malloc(sizeof(char) * (match[3].rm_eo - match[3].rm_so));
+        url->user = (char*) malloc(10);
+        url->password = (char*) malloc(9);
+        url->host = (char*) malloc(match[2].rm_eo - match[2].rm_so);
+        url->path = (char*) malloc(match[3].rm_eo - match[3].rm_so);
+        url->file = (char*) malloc(match[4].rm_eo - match[4].rm_so);
+        strcpy(url->user, "anonymous");
+        strcpy(url->password, "password");
         strncpy(url->host, str + match[2].rm_so, match[2].rm_eo - match[2].rm_so);
         strncpy(url->path, str + match[3].rm_so, match[3].rm_eo - match[3].rm_so);
+        strncpy(url->file, str + match[4].rm_so, match[4].rm_eo - match[4].rm_so);
         // path is acting weird when its just /
     }
     else {
@@ -125,14 +133,12 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
-    char *user;
-    char *password;
-    strcat(user, "USER ");
+    char user[50] = "USER ";
+    char password[50] = "PASS ";
     strcat(user, url.user);
-    strcat(user, "\r\n");
-    strcat(password, "PASS ");
+    strcat(user, "\n");
     strcat(password, url.password);
-    strcat(password, "\r\n");
+    strcat(password, "\n");
 
 
     struct hostent *h;
@@ -194,18 +200,43 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
-    int ip1, ip2, ip3, ip4, port1, port2;
+    regex_t ipmatch;
+    regmatch_t match[7];
+    char* pattern = "227 Entering Passive Mode \\((.+),(.+),(.+),(.+),(.+),(.+)\\)";
 
-    sscanf(buffer, "227 Entering Passive Mode (%d,%d,%d,%d,%d,%d)", &ip1, &ip2, &ip3, &ip4, &port1, &port2);
+    if (regcomp(&ipmatch, pattern, REG_EXTENDED) != 0) {
+        fprintf(stderr, "Failed to compile regex pattern\n");
+        return 1;
+    }
 
-    int port = port1 * 256 + port2;
+    char *iprcv = (char*) malloc(sizeof(char)*16);
+    char *port1 = (char*) malloc(sizeof(char)*4);
+    char *port2 = (char*) malloc(sizeof(char)*4);
+
+    if (regexec(&ipmatch, buffer, 7, match, 0) == 0){
+        printf("Match with user\n");
+        strncpy(iprcv, buffer + match[1].rm_so, match[1].rm_eo - match[1].rm_so);
+        iprcv[match[1].rm_eo-match[1].rm_so] = '.';
+        strncpy(iprcv + match[1].rm_eo-match[1].rm_so+1, buffer + match[2].rm_so, match[2].rm_eo - match[2].rm_so);
+        iprcv[match[2].rm_eo-match[1].rm_so] = '.';
+        strncpy(iprcv + match[2].rm_eo-match[1].rm_so+1, buffer + match[3].rm_so, match[3].rm_eo - match[3].rm_so);
+        iprcv[match[3].rm_eo-match[1].rm_so] = '.';
+        strncpy(iprcv + match[3].rm_eo-match[1].rm_so+1, buffer + match[4].rm_so, match[4].rm_eo - match[4].rm_so);
+        strncpy(port1, buffer + match[5].rm_so, match[5].rm_eo - match[5].rm_so);
+        strncpy(port2, buffer + match[6].rm_so, match[6].rm_eo - match[6].rm_so);
+    }
+    else {
+        printf("No match\n");
+        regfree(&ipmatch);
+        return 1;
+    }
+    regfree(&ipmatch);
+
+    int port = atoi(port1) * 256 + atoi(port2);
 
     int read_socket;
 
-    ip = "";
-    sprintf(ip, "%d.%d.%d.%d", ip1, ip2, ip3, ip4);
-
-    socket_create(ip, port, &read_socket);
+    socket_create(iprcv, port, &read_socket);
 
     //RETR
     char *retr;
