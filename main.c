@@ -96,16 +96,25 @@ int socket_create(char *ip, int port, int *sockfd) {
 int read_response(int sockfd, char *buffer){
     int i = 0;
     char byte = 0;
+    printf("Reading response\n");
     while(byte != '\n'){
-        if(read(sockfd, &byte, 1) < 0){
+        int b = read(sockfd, &byte, 1);
+        if(b < 0){
             perror("read()");
             exit(-1);
         }
+        if(b == 0){
+            printf("Connection closed\n");
+            break;
+        }
+        printf("%c", byte);
         buffer[i] = byte;
         i++;
     }
     if(buffer[3] == '-'){
+        printf("Multiline response\n");
         while(buffer[3] == '-'){
+            byte = 0;
             i = 0;
             while(byte != '\n'){
                 if(read(sockfd, &byte, 1) < 0){
@@ -113,10 +122,12 @@ int read_response(int sockfd, char *buffer){
                     exit(-1);
                 }
                 buffer[i] = byte;
+                printf("%c", byte);
                 i++;
             }
         }
     }
+    buffer[i] = '\0';
     return 0;
 }
 
@@ -133,17 +144,17 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
-    char user[50] = "USER ";
-    char password[50] = "PASS ";
-    strcat(user, url.user);
+    char user[16] = "USER anonymous\r\n";
+    char password[16] = "PASS anonymous\r\n";
+   /* strcat(user, url.user);
     strcat(user, "\n");
     strcat(password, url.password);
     strcat(password, "\n");
-
+    */
 
     struct hostent *h;
 
-    if ((h = gethostbyname(argv[1])) == NULL) {
+    if ((h = gethostbyname(url.host)) == NULL) {
         herror("gethostbyname()");
         exit(-1);
     }
@@ -153,25 +164,39 @@ int main(int argc, char *argv[]) {
     int command_socket;
 
     socket_create(ip, 21, &command_socket);
-    
-    //USER
-    bytes = write(command_socket,&user,sizeof(&user));
-    if(bytes < 0){
-        perror("write()");
-        exit(-1);
-    }
 
     if(read_response(command_socket, buffer) != 0){
         printf("Error reading response\n");
         return 1;
     }
+
+    printf("Response: %s\n", buffer);
+    
+    //USER
+    bytes = write(command_socket, user, sizeof(user));
+    if(bytes < 0){
+        perror("write()");
+        exit(-1);
+    }
+
+    printf("%s\n", user);
+    
+    if(read_response(command_socket, buffer) != 0){
+        printf("Error reading response\n");
+        return 1;
+    }
+
+    printf("Response: %s\n", buffer);
+
     if(buffer[0] != '3' || buffer[1] != '3' || buffer[2] != '1'){
         printf("Error logging in\n");
         return 1;
     }
 
+    printf("%s\n", password);
+
     //PASSWORD
-    bytes = write(command_socket,&password,sizeof(&password));
+    bytes = write(command_socket, password, sizeof(password));
     if(bytes < 0){
         perror("write()");
         exit(-1);
@@ -180,6 +205,9 @@ int main(int argc, char *argv[]) {
         printf("Error reading response\n");
         return 1;
     }
+
+    printf("Response: %s\n", buffer);
+
     if(buffer[0] != '2' || buffer[1] != '3' || buffer[2] != '0'){
         printf("Error logging in\n");
         return 1;
@@ -195,6 +223,9 @@ int main(int argc, char *argv[]) {
         printf("Error reading response\n");
         return 1;
     }
+
+    printf("Response: %s\n", buffer);
+
     if(buffer[0] != '2' || buffer[1] != '2' || buffer[2] != '7'){
         printf("Error entering passive mode\n");
         return 1;
@@ -212,6 +243,8 @@ int main(int argc, char *argv[]) {
     char *iprcv = (char*) malloc(sizeof(char)*16);
     char *port1 = (char*) malloc(sizeof(char)*4);
     char *port2 = (char*) malloc(sizeof(char)*4);
+
+    printf("Buffer: %s\n", buffer);
 
     if (regexec(&ipmatch, buffer, 7, match, 0) == 0){
         printf("Match with user\n");
@@ -234,16 +267,16 @@ int main(int argc, char *argv[]) {
 
     int port = atoi(port1) * 256 + atoi(port2);
 
+    printf("IP: %s\n", iprcv);
+    printf("Port: %d\n", port);
+
     int read_socket;
 
     socket_create(iprcv, port, &read_socket);
 
     //RETR
-    char *retr;
-    strcat(retr, "RETR ");
-    strcat(retr, url.path);
-    strcat(retr, "\r\n");
-    bytes = write(command_socket,&retr,sizeof(&retr));
+    char retr[29] = "RETR pub/kodi/timestamp.txt\r\n";
+    bytes = write(command_socket, retr,sizeof(retr));
     if(bytes < 0){
         perror("write()");
         exit(-1);
@@ -258,7 +291,7 @@ int main(int argc, char *argv[]) {
     }
     //READ FILE
     FILE *file;
-    file = fopen("url.file.txt", "w");
+    file = fopen("timestamp.txt", "w");
     if(file == NULL){
         printf("Error opening file\n");
         return 1;
@@ -274,6 +307,17 @@ int main(int argc, char *argv[]) {
         exit(-1);
     }
     fclose(file);
+    close(read_socket);
+
+    if(read_response(command_socket, buffer) != 0){
+        printf("Error reading response\n");
+        return 1;
+    }
+
+    if(buffer[0] != '2' || buffer[1] != '2' || buffer[2] != '6'){
+        printf("Error\n");
+        return 1;
+    }
 
     //QUIT
     bytes = write(command_socket,"QUIT\r\n",6);
