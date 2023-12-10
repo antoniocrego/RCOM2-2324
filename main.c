@@ -13,12 +13,17 @@ struct url {
     char *host;
     char *path;
     char *file;
+    int user_size;
+    int password_size;
+    int host_size;
+    int path_size;
+    int file_size;
 };
 
 int url_parser(char *str, struct url *url) {
     regex_t regex_user;
     regex_t regex_nouser;
-    char *nouserpattern = "(ftp)://([^/]*)(/.*)";
+    char *nouserpattern = "(ftp)://([^/]*)/(.*/)*(.*)";
     char *userpattern = "(ftp)://([^:]*):([^@]*)@([^/]*)/(.*/)*(.*)";
     regmatch_t match[7];
     if (regcomp(&regex_user, userpattern, REG_EXTENDED) != 0) {
@@ -31,30 +36,47 @@ int url_parser(char *str, struct url *url) {
     }
     if (regexec(&regex_user, str, 7, match, 0) == 0){
         printf("Match with user\n");
-        url->user = (char*) malloc(match[2].rm_eo - match[2].rm_so);
-        url->password = (char*) malloc(match[3].rm_eo - match[3].rm_so);
-        url->host = (char*) malloc(match[4].rm_eo - match[4].rm_so);
-        url->path = (char*) malloc(match[5].rm_eo - match[5].rm_so);
-        url->file = (char*) malloc(match[6].rm_eo - match[6].rm_so);
-        strncpy(url->user, str + match[2].rm_so, match[2].rm_eo - match[2].rm_so);
-        strncpy(url->password, str + match[3].rm_so, match[3].rm_eo - match[3].rm_so);
-        strncpy(url->host, str + match[4].rm_so, match[4].rm_eo - match[4].rm_so);
-        strncpy(url->path, str + match[5].rm_so, match[5].rm_eo - match[5].rm_so);
-        strncpy(url->file, str + match[6].rm_so, match[6].rm_eo - match[6].rm_so);
+        url->user_size = match[2].rm_eo - match[2].rm_so;
+        url->password_size = match[3].rm_eo - match[3].rm_so;
+        url->host_size = match[4].rm_eo - match[4].rm_so;
+        url->path_size = match[5].rm_eo - match[5].rm_so;
+        url->file_size = match[6].rm_eo - match[6].rm_so;
+        url->user = (char*) malloc(url->user_size+1);
+        url->password = (char*) malloc(url->password_size+1);
+        url->host = (char*) malloc(url->host_size+1);
+        url->path = (char*) malloc(url->path_size+1);
+        url->file = (char*) malloc(url->file_size+1);
+        memset(url->user, '\0', url->user_size+1);
+        memset(url->password, '\0', url->password_size+1);
+        memset(url->host, '\0', url->host_size+1);
+        memset(url->path, '\0', url->path_size+1);
+        memset(url->file, '\0', url->file_size+1);
+        strncpy(url->user, str + match[2].rm_so, url->user_size);
+        strncpy(url->password, str + match[3].rm_so, url->password_size);
+        strncpy(url->host, str + match[4].rm_so, url->host_size);
+        strncpy(url->path, str + match[5].rm_so, url->path_size);
+        strncpy(url->file, str + match[6].rm_so, url->file_size);
     }
     else if (regexec(&regex_nouser, str, 5, match, 0) == 0){
         printf("Match without user\n");
+        url->user_size = 9;
+        url->password_size = 8;
+        url->host_size = match[2].rm_eo - match[2].rm_so;
+        url->path_size = match[3].rm_eo - match[3].rm_so;
+        url->file_size = match[4].rm_eo - match[4].rm_so;
         url->user = (char*) malloc(10);
         url->password = (char*) malloc(9);
-        url->host = (char*) malloc(match[2].rm_eo - match[2].rm_so);
-        url->path = (char*) malloc(match[3].rm_eo - match[3].rm_so);
-        url->file = (char*) malloc(match[4].rm_eo - match[4].rm_so);
+        url->host = (char*) malloc(url->host_size+1);
+        url->path = (char*) malloc(url->path_size+1);
+        url->file = (char*) malloc(url->file_size+1);
+        memset(url->host, '\0', url->host_size+1);
+        memset(url->path, '\0', url->path_size+1);
+        memset(url->file, '\0', url->file_size+1);
         strcpy(url->user, "anonymous");
         strcpy(url->password, "password");
-        strncpy(url->host, str + match[2].rm_so, match[2].rm_eo - match[2].rm_so);
-        strncpy(url->path, str + match[3].rm_so, match[3].rm_eo - match[3].rm_so);
-        strncpy(url->file, str + match[4].rm_so, match[4].rm_eo - match[4].rm_so);
-        // path is acting weird when its just /
+        strncpy(url->host, str + match[2].rm_so, url->host_size);
+        strncpy(url->path, str + match[3].rm_so, url->path_size);
+        strncpy(url->file, str + match[4].rm_so, url->file_size);
     }
     else {
         printf("No match\n");
@@ -143,14 +165,15 @@ int main(int argc, char *argv[]) {
         printf("Error parsing url\n");
         return 1;
     }
-
-    char user[16] = "USER anonymous\r\n";
-    char password[16] = "PASS anonymous\r\n";
-   /* strcat(user, url.user);
-    strcat(user, "\n");
+    
+    char* user = (char*) malloc(sizeof(char)*(url.user_size+5+3));
+    char* password = (char*) malloc(sizeof(char)*(url.password_size+5+3));
+    strcpy(user, "USER ");
+    strcpy(password, "PASS ");
+    strcat(user, url.user);
+    strcat(user, "\r\n");
     strcat(password, url.password);
-    strcat(password, "\n");
-    */
+    strcat(password, "\r\n");
 
     struct hostent *h;
 
@@ -173,7 +196,7 @@ int main(int argc, char *argv[]) {
     printf("Response: %s\n", buffer);
     
     //USER
-    bytes = write(command_socket, user, sizeof(user));
+    bytes = write(command_socket, user, url.user_size+5+2);
     if(bytes < 0){
         perror("write()");
         exit(-1);
@@ -196,7 +219,7 @@ int main(int argc, char *argv[]) {
     printf("%s\n", password);
 
     //PASSWORD
-    bytes = write(command_socket, password, sizeof(password));
+    bytes = write(command_socket, password, url.password_size+5+2);
     if(bytes < 0){
         perror("write()");
         exit(-1);
@@ -247,7 +270,7 @@ int main(int argc, char *argv[]) {
     printf("Buffer: %s\n", buffer);
 
     if (regexec(&ipmatch, buffer, 7, match, 0) == 0){
-        printf("Match with user\n");
+        printf("Match with IP and Port\n");
         strncpy(iprcv, buffer + match[1].rm_so, match[1].rm_eo - match[1].rm_so);
         iprcv[match[1].rm_eo-match[1].rm_so] = '.';
         strncpy(iprcv + match[1].rm_eo-match[1].rm_so+1, buffer + match[2].rm_so, match[2].rm_eo - match[2].rm_so);
@@ -255,6 +278,7 @@ int main(int argc, char *argv[]) {
         strncpy(iprcv + match[2].rm_eo-match[1].rm_so+1, buffer + match[3].rm_so, match[3].rm_eo - match[3].rm_so);
         iprcv[match[3].rm_eo-match[1].rm_so] = '.';
         strncpy(iprcv + match[3].rm_eo-match[1].rm_so+1, buffer + match[4].rm_so, match[4].rm_eo - match[4].rm_so);
+        iprcv = realloc(iprcv, sizeof(char)*(match[4].rm_eo-match[1].rm_so)+1);
         strncpy(port1, buffer + match[5].rm_so, match[5].rm_eo - match[5].rm_so);
         strncpy(port2, buffer + match[6].rm_so, match[6].rm_eo - match[6].rm_so);
     }
@@ -275,8 +299,15 @@ int main(int argc, char *argv[]) {
     socket_create(iprcv, port, &read_socket);
 
     //RETR
-    char retr[29] = "RETR pub/kodi/timestamp.txt\r\n";
-    bytes = write(command_socket, retr,sizeof(retr));
+    char *retr = (char*) malloc(sizeof(char)*(url.file_size+url.path_size+5+3));
+    strcpy(retr, "RETR ");
+    strcat(retr, url.path);
+    strcat(retr, url.file);
+    strcat(retr, "\r\n");
+
+    printf("%s\n", retr);
+
+    bytes = write(command_socket, retr,url.file_size+url.path_size+5+2);
     if(bytes < 0){
         perror("write()");
         exit(-1);
@@ -291,13 +322,13 @@ int main(int argc, char *argv[]) {
     }
     //READ FILE
     FILE *file;
-    file = fopen("timestamp.txt", "w");
+    file = fopen(url.file, "w");
     if(file == NULL){
         printf("Error opening file\n");
         return 1;
     }
     while((bytes = read(read_socket, buffer, 1024)) > 0){
-        if(fwrite(buffer, 1, bytes, file) < 0){
+        if(fwrite(buffer, 1, bytes, file) == 0){
             printf("Error writing to file\n");
             return 1;
         }
